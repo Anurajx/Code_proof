@@ -68,6 +68,13 @@ export function LoginForm() {
       const expires = payload?.exp ? new Date(payload.exp * 1000) : undefined;
 
       setToken(data.accessToken, expires ? { expires } : undefined);
+      // Use a hard navigation to ensure middleware sees the new cookie
+      // and the user is reliably taken to the next screen.
+      if (typeof window !== "undefined") {
+        window.location.href = nextPath;
+        return;
+      }
+
       router.replace(nextPath);
     } catch (err) {
       setError(
