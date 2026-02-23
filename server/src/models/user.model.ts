@@ -43,7 +43,8 @@ const UserSchema = new Schema<UserDocument>(
       required: true,
       default: [],
     },
-    resetAt: { type: Date, required: true, default: startOfLocalDay },
+    // Mongoose default functions should be zero-arg for best TS compatibility.
+    resetAt: { type: Date, required: true, default: () => startOfLocalDay() },
     createdAt: { type: Date, required: true, default: Date.now },
     lastLoginAt: { type: Date, required: true, default: Date.now },
   },
