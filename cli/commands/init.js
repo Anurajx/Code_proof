@@ -59,6 +59,10 @@ export async function runInit({ cwd }) {
         enabled: true,
         useGemini: true
       },
+      dependencyScanner: {
+        enabled: true,
+        includeDevDependencies: true
+      },
       features: {
         reporting: true,
         integration: false,
@@ -116,6 +120,33 @@ export async function runInit({ cwd }) {
     }
   } catch {
     logWarn("Unable to update aiPromptScanner in codeproof.config.json.");
+  }
+
+  // Add dependency scanner config defaults (non-breaking additive update)
+  try {
+    const raw = fs.readFileSync(configPath, "utf8");
+    const existing = JSON.parse(raw);
+    if (typeof existing.dependencyScanner !== "object" || existing.dependencyScanner === null) {
+      existing.dependencyScanner = { enabled: true, includeDevDependencies: true };
+      fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
+      logSuccess("Added dependencyScanner defaults to codeproof.config.json");
+    } else {
+      let updated = false;
+      if (typeof existing.dependencyScanner.enabled !== "boolean") {
+        existing.dependencyScanner.enabled = true;
+        updated = true;
+      }
+      if (typeof existing.dependencyScanner.includeDevDependencies !== "boolean") {
+        existing.dependencyScanner.includeDevDependencies = true;
+        updated = true;
+      }
+      if (updated) {
+        fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
+        logSuccess("Updated dependencyScanner defaults in codeproof.config.json");
+      }
+    }
+  } catch {
+    logWarn("Unable to update dependencyScanner in codeproof.config.json.");
   }
 
   installPreCommitHook(gitRoot);

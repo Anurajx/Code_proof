@@ -15,6 +15,7 @@ import { getClientId } from "../core/identity.js";
 import { getEnforcementState } from "../core/enforcement.js";
 import { checkUsageOrThrow } from "../core/usageCheck.js";
 import { scanAiPrompts } from "../scanners/aiPromptScanner.js";
+import { scanDependencies } from "../scanners/dependencyScanner.js";
 import {
     reportFeatureDisabled,
     warnExperimentalOnce,
@@ -149,6 +150,20 @@ export async function runCli({ args = [], cwd }) {
         }
     }
 
+    // Run Dependency Risk & Supply Chain Scanner (non-blocking, warnings only)
+    let dependencyScan = null;
+    try {
+        const depEnabled = config?.dependencyScanner?.enabled !== false;
+        if (depEnabled) {
+            dependencyScan = await scanDependencies({ gitRoot, config });
+        }
+    } catch (error) {
+        logWarn("Dependency Risk & Supply Chain Scanner failed. Continuing without blocking.");
+        if (error?.message) {
+            logWarn(error.message);
+        }
+    }
+
     if (features.reporting) {
         await withFailOpenReporting(async () => {
             const timestamp = new Date().toISOString();
@@ -170,6 +185,25 @@ export async function runCli({ args = [], cwd }) {
                 aiReviewed,
                 timestamp
             });
+            // Additive: attach supply-chain scanner results for local reports and future server support.
+            report.supplyChain = {
+                aiPrompt: aiPromptScan
+                    ? {
+                        filesScanned: aiPromptScan.filesScanned,
+                        risksFound: aiPromptScan.risksFound,
+                        scoreImpact: aiPromptScan.scoreImpact
+                    }
+                    : { skipped: true },
+                dependencies: dependencyScan
+                    ? {
+                        dependenciesScanned: dependencyScan.dependenciesScanned,
+                        deprecated: dependencyScan.deprecatedCount,
+                        outdated: dependencyScan.outdatedCount,
+                        scoreImpact: dependencyScan.scoreImpact,
+                        skipped: Boolean(dependencyScan.skipped)
+                    }
+                    : { skipped: true }
+            };
             // Report is saved to file and sent to server regardless of findings
             logInfo("Saving report to file...");
             writeReport({ projectRoot: gitRoot, report });
@@ -293,6 +327,40 @@ export async function runCli({ args = [], cwd }) {
             logSuccess("No suspicious AI prompt or markdown instructions detected.");
         } else {
             logInfo(`AI prompt security score impact: ${scoreImpact}`);
+        }
+    }
+
+    // Render dependency scan results
+    if (dependencyScan) {
+        if (dependencyScan.skipped) {
+            // Silent skip to avoid noise in repos without package.json
+        } else {
+            logInfo("\nDependency Risk & Supply Chain Scanner");
+            logInfo("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            logInfo(`Dependencies scanned: ${dependencyScan.dependenciesScanned}`);
+            logInfo(`Deprecated: ${dependencyScan.deprecatedCount}`);
+            logInfo(`Outdated: ${dependencyScan.outdatedCount}`);
+
+            for (const entry of dependencyScan.results) {
+                logWarn("⚠ Dependency Risk Detected");
+                logWarn(`Package: ${entry.package}`);
+                logWarn(`Current: ${entry.current}`);
+                logWarn(`Latest: ${entry.latest}`);
+                logWarn(`Status: ${entry.status}`);
+                if (entry.deprecatedMessage) {
+                    logWarn("Deprecated message:");
+                    logWarn(`  ${entry.deprecatedMessage}`);
+                }
+                logWarn("Recommendation:");
+                logWarn(`  ${entry.recommendation}`);
+                logWarn("");
+            }
+
+            if (dependencyScan.results.length === 0) {
+                logSuccess("No deprecated or major-outdated dependencies detected.");
+            } else {
+                logInfo(`Dependency security score impact: ${dependencyScan.scoreImpact}`);
+            }
         }
     }
 
