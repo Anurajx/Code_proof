@@ -14,6 +14,7 @@ import { resolveFeatureFlags, isVerbose } from "../core/featureFlags.js";
 import { getClientId } from "../core/identity.js";
 import { getEnforcementState } from "../core/enforcement.js";
 import { checkUsageOrThrow } from "../core/usageCheck.js";
+import { scanAiPrompts } from "../scanners/aiPromptScanner.js";
 import {
     reportFeatureDisabled,
     warnExperimentalOnce,
@@ -72,7 +73,7 @@ export async function runCli({ args = [], cwd }) {
     try {
         const usage = await checkUsageOrThrow({ clientId, config });
         if (!usage.allowed) {
-            const limit = usage.limit ?? 20;
+            const limit = usage.limit ?? 50;
             const used = usage.used ?? limit;
             logError(`Free limit reached (${used}/${limit} runs/month).`);
             logError("Upgrade to premium to continue.");
@@ -133,6 +134,20 @@ export async function runCli({ args = [], cwd }) {
         baselineFindings: [...findings, ...escalations],
         aiDecisions
     });
+
+    // Run AI Prompt Injection & Supply-Chain Scanner (non-blocking, warnings only)
+    let aiPromptScan = null;
+    try {
+        const aiPromptEnabled = config?.aiPromptScanner?.enabled !== false;
+        if (aiPromptEnabled) {
+            aiPromptScan = await scanAiPrompts({ gitRoot, config });
+        }
+    } catch (error) {
+        logWarn("AI Prompt Injection & Supply-Chain Scanner failed. Continuing without blocking.");
+        if (error?.message) {
+            logWarn(error.message);
+        }
+    }
 
     if (features.reporting) {
         await withFailOpenReporting(async () => {
@@ -242,6 +257,42 @@ export async function runCli({ args = [], cwd }) {
                 logWarn(`    Fix: ${decision.suggestedFix}`);
             }
             logWarn("");
+        }
+    }
+
+    // Render AI Prompt / Markdown supply-chain scan results
+    if (aiPromptScan) {
+        const { filesScanned, risksFound, results, scoreImpact } = aiPromptScan;
+        logInfo("\nAI Prompt Injection & Supply-Chain Scanner");
+        logInfo("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        logInfo(`Files scanned for AI prompts & markdown: ${filesScanned}`);
+        logInfo(`Files with detected risks: ${risksFound}`);
+
+        for (const entry of results) {
+            const relative = path.relative(gitRoot, entry.filePath) || entry.filePath;
+            logWarn("⚠ AI Prompt Risk Detected");
+            logWarn(`File: ${relative}`);
+            logWarn(`Risk: ${entry.riskLevel}`);
+            if (entry.reasons && entry.reasons.length > 0) {
+                logWarn("Reasons:");
+                for (const reason of entry.reasons) {
+                    logWarn(`  • ${reason}`);
+                }
+            }
+            if (entry.recommendation) {
+                logWarn("Recommendation:");
+                logWarn(`  ${entry.recommendation}`);
+            } else {
+                logWarn("Recommendation:");
+                logWarn("  Review AI instruction files before trusting automated tools.");
+            }
+            logWarn("");
+        }
+
+        if (results.length === 0) {
+            logSuccess("No suspicious AI prompt or markdown instructions detected.");
+        } else {
+            logInfo(`AI prompt security score impact: ${scoreImpact}`);
         }
     }
 

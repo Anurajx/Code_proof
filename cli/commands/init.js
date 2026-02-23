@@ -55,6 +55,10 @@ export async function runInit({ cwd }) {
       projectType,
       scanMode: "staged",
       enforcement: "enabled",
+      aiPromptScanner: {
+        enabled: true,
+        useGemini: true
+      },
       features: {
         reporting: true,
         integration: false,
@@ -85,6 +89,33 @@ export async function runInit({ cwd }) {
     }
   } catch {
     logWarn("Unable to update enforcement in codeproof.config.json.");
+  }
+
+  // Add AI prompt scanner config defaults (non-breaking additive update)
+  try {
+    const raw = fs.readFileSync(configPath, "utf8");
+    const existing = JSON.parse(raw);
+    if (typeof existing.aiPromptScanner !== "object" || existing.aiPromptScanner === null) {
+      existing.aiPromptScanner = { enabled: true, useGemini: true };
+      fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
+      logSuccess("Added aiPromptScanner defaults to codeproof.config.json");
+    } else {
+      let updated = false;
+      if (typeof existing.aiPromptScanner.enabled !== "boolean") {
+        existing.aiPromptScanner.enabled = true;
+        updated = true;
+      }
+      if (typeof existing.aiPromptScanner.useGemini !== "boolean") {
+        existing.aiPromptScanner.useGemini = true;
+        updated = true;
+      }
+      if (updated) {
+        fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
+        logSuccess("Updated aiPromptScanner defaults in codeproof.config.json");
+      }
+    }
+  } catch {
+    logWarn("Unable to update aiPromptScanner in codeproof.config.json.");
   }
 
   installPreCommitHook(gitRoot);
