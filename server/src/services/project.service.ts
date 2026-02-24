@@ -25,6 +25,7 @@ export const listUserProjects = async (params: {
     ],
   })
     .select("projectId name repoIdentifier createdAt lastReportAt -_id")
+    .sort({ lastReportAt: -1 }) // Sort by lastReportAt descending (most recent first)
     .lean();
 
   return projects as ProjectSummary[];

@@ -84,10 +84,15 @@ export default function DashboardPage() {
   const [usageData, setUsageData] = useState<UsageResponse | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
 
-  const recentProjects = useMemo(
-    () => projects.slice(0, PROJECT_LIMIT),
-    [projects],
-  );
+  const recentProjects = useMemo(() => {
+    // Sort by lastReportAt descending (most recent first), then take first N
+    const sorted = [...projects].sort((a, b) => {
+      const aTime = a.lastReportAt ? new Date(a.lastReportAt).getTime() : 0;
+      const bTime = b.lastReportAt ? new Date(b.lastReportAt).getTime() : 0;
+      return bTime - aTime; // Descending: newest first
+    });
+    return sorted.slice(0, PROJECT_LIMIT);
+  }, [projects]);
 
   useEffect(() => {
     let isActive = true;
