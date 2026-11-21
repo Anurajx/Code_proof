@@ -1,6 +1,6 @@
 # CodeProof
 
-Security-first code scanning with actionable AI-assisted analysis, local CLI enforcement, and a live dashboard.
+An intelligent, security-first code analysis platform that helps developers identify vulnerabilities, understand potential risks, and improve code quality through AI-assisted insights, local CLI scanning, and a real-time security dashboard.
 
 ---
 
